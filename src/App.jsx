@@ -10,6 +10,19 @@ import {
 import { clamp, numberValue } from './utils/math'
 
 const initialSettings = APP_CONFIG.defaults
+const MIN_WORKSPACE_IMAGE_RATIO = 0.3
+const MAX_ZOOM = 16
+
+function calculateMinZoom(workspace, targetSize) {
+  const rect = workspace?.getBoundingClientRect()
+  if (!rect?.width || !rect?.height || !targetSize.width || !targetSize.height) return 0.05
+
+  return Math.min(
+    MAX_ZOOM,
+    (rect.width * MIN_WORKSPACE_IMAGE_RATIO) / targetSize.width,
+    (rect.height * MIN_WORKSPACE_IMAGE_RATIO) / targetSize.height,
+  )
+}
 
 function sanitizeSettings(settings) {
   const useFastSolving = Boolean(settings.useFastSolving)
@@ -21,7 +34,8 @@ function sanitizeSettings(settings) {
     startY: Math.round(numberValue(settings.startY)),
     startZ: Math.round(numberValue(settings.startZ)),
     layerDirection: Number(settings.layerDirection) === -1 ? -1 : 1,
-    layerStepBlocks: Math.max(1, Math.round(numberValue(settings.layerStepBlocks, 1))),
+    layerStepBlocks: Math.max(1, Math.round(numberValue(settings.layerStepBlocks, 0)) + 1),
+    mirrorImageWidthAxis: !settings.mirrorImageWidthAxis,
     commandLimit: Math.max(1, Math.round(numberValue(settings.commandLimit, 20_000))),
     resultWidth: Math.max(1, Math.round(numberValue(settings.resultWidth, 1))),
     resultHeight: Math.max(1, Math.round(numberValue(settings.resultHeight, 1))),
@@ -57,6 +71,7 @@ function App() {
   const [zoom, setZoom] = useState(1)
   const [isPanning, setIsPanning] = useState(false)
   const [isViewAnimating, setIsViewAnimating] = useState(false)
+  const [minZoom, setMinZoom] = useState(0.05)
   const [generation, setGeneration] = useState({ status: 'idle', progress: 0, label: '' })
   const [stopModalOpen, setStopModalOpen] = useState(false)
   const [download, setDownload] = useState(null)
@@ -97,8 +112,21 @@ function App() {
   }, [image, settings, targetSize.height, targetSize.width])
 
   const updateSetting = useCallback((key, value) => {
-    setSettings((current) => ({ ...current, [key]: value }))
-  }, [])
+    setSettings((current) => {
+      if (key !== 'lockAspectRatio') return { ...current, [key]: value }
+
+      const lockAspectRatio = Boolean(value)
+      if (!lockAspectRatio || !image) return { ...current, lockAspectRatio }
+
+      const resultHeight = Math.max(1, Math.round(numberValue(current.resultHeight, 1)))
+      return {
+        ...current,
+        lockAspectRatio,
+        resultHeight,
+        resultWidth: calculateWidthForHeight(image, resultHeight),
+      }
+    })
+  }, [image])
 
   const updateDimension = useCallback(
     (key, value) => {
@@ -179,6 +207,10 @@ function App() {
       const context = canvas.getContext('2d')
       context.imageSmoothingEnabled = settings.resizeFilter !== 'NEAREST'
       context.imageSmoothingQuality = settings.resizeFilter === 'LANCZOS' ? 'high' : 'medium'
+      if (settings.mirrorImageWidthAxis) {
+        context.translate(targetSize.width, 0)
+        context.scale(-1, 1)
+      }
       context.drawImage(bitmap, 0, 0, targetSize.width, targetSize.height)
       const nextPreviewUrl = canvas.toDataURL('image/png')
       if (!disposed) setPreviewUrl(nextPreviewUrl)
@@ -189,7 +221,27 @@ function App() {
     return () => {
       disposed = true
     }
-  }, [image, settings.resizeFilter, targetSize.height, targetSize.width])
+  }, [image, settings.mirrorImageWidthAxis, settings.resizeFilter, targetSize.height, targetSize.width])
+
+  useEffect(() => {
+    const workspace = workspaceRef.current
+    if (!workspace || !image) return undefined
+
+    function updateMinZoom() {
+      const nextMinZoom = calculateMinZoom(workspace, {
+        width: targetSize.width,
+        height: targetSize.height,
+      })
+      setMinZoom(nextMinZoom)
+      setZoom((current) => clamp(current, nextMinZoom, MAX_ZOOM))
+    }
+
+    updateMinZoom()
+    const observer = new ResizeObserver(updateMinZoom)
+    observer.observe(workspace)
+
+    return () => observer.disconnect()
+  }, [image, targetSize.height, targetSize.width])
 
   useEffect(() => {
     function handlePaste(event) {
@@ -239,6 +291,8 @@ function App() {
 
     setRuntimeError('')
     setGeneration({ status: 'running', progress: 0, label: 'Preparing image' })
+    const generationSettings = sanitizeSettings(settings)
+    const shouldMirrorOverlay = generationSettings.mirrorImageWidthAxis !== settings.mirrorImageWidthAxis
 
     overlayCanvas.width = targetSize.width
     overlayCanvas.height = targetSize.height
@@ -266,8 +320,12 @@ function App() {
         if (imageData) {
           for (let index = 0; index < message.indexes.length; index += 1) {
             const pixelIndex = message.indexes[index]
+            const displayPixelIndex = shouldMirrorOverlay
+              ? Math.floor(pixelIndex / targetSize.width) * targetSize.width +
+                (targetSize.width - 1 - (pixelIndex % targetSize.width))
+              : pixelIndex
             const colorIndex = index * 3
-            const offset = pixelIndex * 4
+            const offset = displayPixelIndex * 4
             imageData.data[offset] = message.colors[colorIndex]
             imageData.data[offset + 1] = message.colors[colorIndex + 1]
             imageData.data[offset + 2] = message.colors[colorIndex + 2]
@@ -328,7 +386,7 @@ function App() {
       type: 'generate',
       fileBuffer,
       fileType: fileRef.current.type,
-      settings: sanitizeSettings(settings),
+      settings: generationSettings,
     })
   }, [download, settings, stats, targetSize.height, targetSize.width, validation])
 
@@ -354,8 +412,8 @@ function App() {
     const rect = workspace.getBoundingClientRect()
     const nextZoom = clamp(
       Math.min((rect.width * 0.9) / targetSize.width, (rect.height * 0.9) / targetSize.height),
-      0.05,
-      16,
+      minZoom,
+      MAX_ZOOM,
     )
 
     window.clearTimeout(animationTimeoutRef.current)
@@ -363,7 +421,7 @@ function App() {
     setPan({ x: 0, y: 0 })
     setZoom(nextZoom)
     animationTimeoutRef.current = window.setTimeout(() => setIsViewAnimating(false), 320)
-  }, [image, targetSize.height, targetSize.width])
+  }, [image, minZoom, targetSize.height, targetSize.width])
 
   const handleWheel = useCallback(
     (event) => {
@@ -374,7 +432,7 @@ function App() {
       if (!workspace) return
 
       const rect = workspace.getBoundingClientRect()
-      const nextZoom = clamp(zoom * Math.exp(-event.deltaY * 0.0015), 0.05, 16)
+      const nextZoom = clamp(zoom * Math.exp(-event.deltaY * 0.0015), minZoom, MAX_ZOOM)
       const focalX = (event.clientX - rect.left - rect.width / 2 - pan.x) / zoom
       const focalY = (event.clientY - rect.top - rect.height / 2 - pan.y) / zoom
 
@@ -387,7 +445,7 @@ function App() {
       })
       animationTimeoutRef.current = window.setTimeout(() => setIsViewAnimating(false), 140)
     },
-    [image, pan.x, pan.y, zoom],
+    [image, minZoom, pan.x, pan.y, zoom],
   )
 
   const handleDoubleClick = useCallback(
@@ -399,7 +457,7 @@ function App() {
       if (!workspace) return
 
       const rect = workspace.getBoundingClientRect()
-      const nextZoom = clamp(zoom * 1.6, 0.05, 16)
+      const nextZoom = clamp(zoom * 1.6, minZoom, MAX_ZOOM)
       const focalX = (event.clientX - rect.left - rect.width / 2 - pan.x) / zoom
       const focalY = (event.clientY - rect.top - rect.height / 2 - pan.y) / zoom
 
@@ -412,7 +470,7 @@ function App() {
       })
       animationTimeoutRef.current = window.setTimeout(() => setIsViewAnimating(false), 220)
     },
-    [image, pan.x, pan.y, zoom],
+    [image, minZoom, pan.x, pan.y, zoom],
   )
 
   const pointerDown = useCallback(
@@ -453,6 +511,8 @@ function App() {
           isViewAnimating={isViewAnimating}
           pan={pan}
           zoom={zoom}
+          minZoom={minZoom}
+          maxZoom={MAX_ZOOM}
           overlayCanvasRef={overlayCanvasRef}
           fileInputRef={fileInputRef}
           onImportFile={importFile}
@@ -469,7 +529,7 @@ function App() {
           onDoubleClick={handleDoubleClick}
           onFitView={fitImageToWorkspace}
           onRemoveImage={removeImage}
-          onZoomChange={(value) => setZoom(clamp(value, 0.05, 16))}
+          onZoomChange={(value) => setZoom(clamp(value, minZoom, MAX_ZOOM))}
         />
 
         <ConfigPanel

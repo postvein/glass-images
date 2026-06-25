@@ -36,16 +36,16 @@ export function ConfigPanel({
       <div className="shrink-0 border-b border-zinc-800 px-5 py-4">
         <div className="flex items-center gap-2 text-lg font-medium">
           <FileArchive className="h-5 w-5 text-violet-300" />
-          Glass schematic builder
+          Glass image builder
         </div>
         <p className="mt-1 text-sm text-zinc-500">
-          Client-side stained glass image generation for Minecraft schematic files.
+          Image generator with stained glass in Minecraft
         </p>
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="scrollbar-hidden min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         <fieldset disabled={isRunning} className={`m-0 min-w-0 border-0 p-0 ${isRunning ? 'opacity-60' : ''}`}>
-          <Section title="Schematic Output" icon={FileArchive}>
+          <Section title="Schematic Configuration" icon={FileArchive}>
             <Field label="File name">
               <TextInput
                 value={settings.schematicFileName}
@@ -73,6 +73,11 @@ export function ConfigPanel({
                 />
               </Field>
             </div>
+            {Number(settings.resultHeight) > APP_CONFIG.minecraft.maxY ? (
+              <p className="text-xs leading-5 text-red-300">
+                Minecraft build limit is 320 blocks, so think about the height again.
+              </p>
+            ) : null}
             <CheckboxField
               label="Keep aspect ratio"
               checked={settings.lockAspectRatio}
@@ -124,7 +129,7 @@ export function ConfigPanel({
               <Field label="Space between layers" help={APP_CONFIG.help.layerStepBlocks}>
                 <TextInput
                   type="number"
-                  min="1"
+                  min="0"
                   value={settings.layerStepBlocks}
                   onChange={(event) => onSettingChange('layerStepBlocks', event.target.value)}
                 />
@@ -145,7 +150,7 @@ export function ConfigPanel({
                   <Field label="Space between layers" help={APP_CONFIG.help.layerStepBlocks}>
                     <TextInput
                       type="number"
-                      min="1"
+                      min="0"
                       value={settings.layerStepBlocks}
                       onChange={(event) => onSettingChange('layerStepBlocks', event.target.value)}
                     />

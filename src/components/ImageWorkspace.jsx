@@ -12,6 +12,8 @@ export function ImageWorkspace({
   isViewAnimating,
   pan,
   zoom,
+  minZoom,
+  maxZoom,
   overlayCanvasRef,
   fileInputRef,
   onImportFile,
@@ -97,7 +99,7 @@ export function ImageWorkspace({
           <ImagePlus className="h-10 w-10 text-violet-300" />
           <span className="text-lg font-medium text-zinc-100">Drop an image here</span>
           <span className="max-w-sm text-sm leading-6 text-zinc-400">
-            Drag an image, paste one with Cmd/Ctrl + V, or open it from Finder with the file picker.
+            Drag an image, paste one with Cmd/Ctrl + V, or open it from files explorer.
           </span>
         </button>
       )}
@@ -129,8 +131,8 @@ export function ImageWorkspace({
             </Button>
             <input
               type="range"
-              min="0.05"
-              max="16"
+              min={minZoom}
+              max={maxZoom}
               step="0.25"
               value={zoom}
               onChange={(event) => onZoomChange(Number(event.target.value))}

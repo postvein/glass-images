@@ -17,7 +17,7 @@ export const APP_CONFIG = {
     startZ: 47,
     layerAxis: 'x',
     layerDirection: 1,
-    layerStepBlocks: 1,
+    layerStepBlocks: 0,
     commandLimit: 20_000,
     resultWidth: 320,
     resultHeight: 300,
@@ -178,7 +178,7 @@ export const APP_CONFIG = {
     maxLayers:
       'How many glass blocks the solver may stack for each image pixel at most.',
     layerStepBlocks:
-      '1 places layers next to each other. 2 leaves one empty block between each layer.',
+      'The distance between glass layers.',
     beamWidth:
       'How many candidate glass stacks survive each solver depth. Higher is slower but can improve matches.',
     colorBinSize:
