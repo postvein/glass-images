@@ -75,7 +75,7 @@ function renderLutStackRgb(stackIndexes) {
   return [Math.round(r), Math.round(g), Math.round(b)]
 }
 
-async function loadGlassLutQ32(url = '/lut_q32.glut') {
+async function loadGlassLutQ32(url = `${import.meta.env.BASE_URL}lut_q32.glut`) {
   const cached = lutCache.get(url)
   if (cached) return cached
 
